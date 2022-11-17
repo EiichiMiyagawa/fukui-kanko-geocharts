@@ -1,0 +1,376 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>福井県観光アンケート 地図チャート（データ出典：福井県観光連盟）</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.6/dayjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+</head><body>
+<h1 id=title></h1>
+
+<div id="prefbox"></div>
+<div id="divsels"></div>
+<div id="chart-data-count"></div>
+<div id="select-measurement-div"></div>
+<div id="charts">
+  <div>都道府県をクリックすると右側に詳細が表示されます。</div>
+  <div id="geochart"></div>
+  <div id="barchart"></div>
+</div>
+<hr>
+<a href=https://code4fukui.github.io/fukui-kanko-survey/all.csv>CSVデータ</a>
+<br>
+
+<script type="module">
+import { CSV } from "https://js.sabae.cc/CSV.js";
+import { ArrayUtil } from "https://js.sabae.cc/ArrayUtil.js";
+import { ChartBar } from "./ChartBar.js";
+
+title.textContent = document.title;
+
+const url = "https://code4fukui.github.io/fukui-kanko-survey/all.csv";
+const data = await CSV.fetch(url);
+const csv = CSV.toJSON(data);
+
+// 各チャートの情報
+const charts = {
+  "年代": {},
+  "性別": {},
+  "6分類": {},
+  "回答エリア2": {},
+  "世帯年収": {},
+  "回答月": {},
+  "宿泊数（県内）": {},
+  "今後の来訪意向": {},
+  "同行者": {}
+};
+
+// 測定項目の情報
+const measurements = {
+  "満足度": {
+    "とても満足": 3,
+    "満足": 1,
+    "どちらでもない": 0,
+    "不満": -1,
+    "とても不満": -3
+  },
+  "不便さ": {
+    "感じた" : -1,
+    "感じなかった" : 0
+  },
+  "NPS": {}
+};
+
+const prefCode = {
+  1: "北海道",
+  2: "青森県",
+  3: "岩手県",
+  4: "宮城県",
+  5: "秋田県",
+  6: "山形県",
+  7: "福島県",
+  8: "茨城県",
+  9: "栃木県",
+  10: "群馬県",
+  11: "埼玉県",
+  12: "千葉県",
+  13: "東京都",
+  14: "神奈川県",
+  15: "新潟県",
+  16: "富山県",
+  17: "石川県",
+  18: "福井県",
+  19: "山梨県",
+  20: "長野県",
+  21: "岐阜県",
+  22: "静岡県",
+  23: "愛知県",
+  24: "三重県",
+  25: "滋賀県",
+  26: "京都府",
+  27: "大阪府",
+  28: "兵庫県",
+  29: "奈良県",
+  30: "和歌山県",
+  31: "鳥取県",
+  32: "島根県",
+  33: "岡山県",
+  34: "広島県",
+  35: "山口県",
+  36: "徳島県",
+  37: "香川県",
+  38: "愛媛県",
+  39: "高知県",
+  40: "福岡県",
+  41: "佐賀県",
+  42: "長崎県",
+  43: "熊本県",
+  44: "大分県",
+  45: "宮崎県",
+  46: "鹿児島県",
+  47: "沖縄県"
+};
+
+const sort = (obj) => {
+  const names = Object.keys(obj).sort();
+  const res = {};
+  for (const name of names) {
+    res[name] = obj[name];
+  }
+  return res;
+};
+
+const getfilteringCsv = (filter) => {
+  const node2array = (nodes) => {
+    const res = [];
+    for (const n of nodes) {
+      res.push(n);
+    }
+    return res;
+  };
+
+  const generateKeys = (selectedOptions) => {
+    const keys = [];
+    for (let i = 0; i < selectedOptions.length; i++) {
+      keys.push(selectedOptions[i].value);
+    }
+    // 空要素は削除
+    return keys.filter(Boolean);
+  }
+
+  const keys = node2array(divsels.querySelectorAll("select")).map(s => [s.dataname, generateKeys(s.selectedOptions)]);
+  const fromDate = dayjs(document.getElementById("fromDate").value);
+  const toDate = dayjs(document.getElementById("toDate").value);
+
+  return csv.filter(c => {
+    const answerDate = dayjs(c["回答日時"]);
+    if (answerDate < fromDate || answerDate > toDate ) {
+      return false;
+    }
+
+    for (const key of keys) {
+      if (key[1].length != 0) {
+        if (!key[1].includes(c[key[0]])) {
+          return false;
+        }
+      }
+    }
+
+    return filter(c);
+  });
+};
+
+const showLineChart = (pref, countKey) => {
+  const barchart = document.getElementById("barchart");
+  barchart.innerHTML = "";
+
+  const prefKey = prefCode[parseInt(pref.slice(-2))];
+  const filter = (csv) => {
+    return csv["都道府県"] == prefKey;
+  };
+
+  const filteringCsv = getfilteringCsv(filter);
+  if (filteringCsv.length) {
+    const data = {};
+    for (const d of filteringCsv) {
+      const v = d[countKey];
+      if (!data[v]) {
+        data[v] = 1;
+      } else {
+        data[v]++;
+      }
+    }
+
+    const data2 = sort(data);
+    const chartBar = new ChartBar(data);
+    const div2 = document.createElement("div");
+    div2.style.display = "inline-block";
+    const span = document.createElement("span");
+    span.textContent = prefKey + " " + countKey + " : " + ` (${filteringCsv.length}件)`;
+    span.appendChild(document.createElement("br"));
+    div2.appendChild(span);
+    div2.appendChild(document.createElement("br"));
+    div2.appendChild(chartBar);
+    barchart.append(div2);
+  };
+};
+
+const showGeoChart = (countKey) => {
+  const barchart = document.getElementById("barchart");
+  barchart.innerHTML = "";
+  
+  const filter = (csv) => {
+    return true;
+  };
+
+  const filteringCsv = getfilteringCsv(filter);
+  if (filteringCsv.length) {
+    const dataCount = document.getElementById("chart-data-count");
+    dataCount.textContent = "データ数：" + filteringCsv.length + "件"
+
+    const chartData = {};
+    const key = "都道府県";
+    for (const d of filteringCsv) {
+      let value = Number(measurements[countKey][d[countKey]]);
+      if (isNaN(value)) {
+        value = Number(d[countKey]);
+      }
+      if (!chartData[d[key]]) {
+        chartData[d[key]] = { value: value, count: 1 }
+      } else {
+        chartData[d[key]]["value"] += value;
+        chartData[d[key]]["count"]++;
+      }
+    }
+
+    google.charts.load("current", {
+      "packages": ["geochart"]
+    });
+    google.charts.setOnLoadCallback(drawMarkersMap);
+
+    function drawMarkersMap() {
+      const rows = [];
+      for (const key in chartData) {
+        // リージョンの名前を調整
+        rows.push([key.replace(/(都|府|県)$/, ""), chartData[key]["value"] / chartData[key]["count"]]);
+      }
+
+      const data = new google.visualization.DataTable();
+      data.addColumn("string", "都道府県");
+      data.addColumn("number", "平均値");
+      data.addRows(rows);
+
+      const options = {
+        region: "JP",
+        resolution: "provinces",
+      };
+
+      const chart = new google.visualization.GeoChart(document.getElementById("geochart"));
+      chart.draw(data, options);
+      const onClickRegion = (countKey, event) => {
+        showLineChart(event.region, countKey);
+      };
+      google.visualization.events.addListener(chart, "regionClick", onClickRegion.bind(null, countKey));
+    };
+  }
+};
+
+const onChangeSearchSelect = () => {
+  const selectMeasurementDiv = document.getElementById("select-measurement-div");
+  const selectMeasurement = selectMeasurementDiv.querySelectorAll("select");
+  showGeoChart(selectMeasurement[0].value);
+};
+
+const onChangeSelectMeasurement = (event) => {
+  showGeoChart(event.target.value);
+};
+
+const createDateInputElement = (option) => {
+  const box = document.createElement("span");
+  box.style.display = "inline-block";
+  const txt = document.createElement("span");
+  txt.textContent = option["title"];
+  box.appendChild(txt);
+  box.appendChild(document.createElement("br"));
+  const dateInputElement = document.createElement("input");
+  dateInputElement.setAttribute("id", option["elementId"]);
+  dateInputElement.setAttribute("type", "date");
+  dateInputElement.value = option["date"];
+  dateInputElement.onchange = onChangeSearchSelect;
+  box.appendChild(dateInputElement);
+  divsels.appendChild(box);
+};
+
+const sels = Object.keys(charts);
+for (const sel of sels) {
+  const names = ArrayUtil.toUnique(csv.map(a => a[sel])).sort();
+  const box = document.createElement("span");
+  box.style.display = "inline-block";
+  const txt = document.createElement("span");
+  txt.textContent = sel;
+  box.appendChild(txt);
+  box.appendChild(document.createElement("br"));
+  const s = document.createElement("select");
+  s.setAttribute("multiple", true);
+  s.appendChild(document.createElement("option"));
+  names.forEach(name => {
+    if (!name) {
+      return;
+    }
+    const opt = document.createElement("option");
+    opt.textContent = name;
+    s.appendChild(opt);
+  });
+  box.appendChild(s);
+  divsels.appendChild(box);
+  s.dataname = sel;
+  s.onchange = onChangeSearchSelect;
+}
+
+divsels.appendChild(document.createElement("br"));
+
+createDateInputElement({
+  title: "開始日",
+  elementId: "fromDate",
+  date: dayjs().subtract(1, "months").format("YYYY-MM-DD")
+});
+createDateInputElement({
+  title: "終了日",
+  elementId: "toDate",
+  date: dayjs().format("YYYY-MM-DD")
+});
+
+const selectMeasurementDiv = document.getElementById("select-measurement-div");
+const selectMeasurement = document.createElement("select");
+const measurementKeys = Object.keys(measurements);
+measurementKeys.forEach((key) => {
+  const option = document.createElement("option");
+  option.textContent = key;
+  selectMeasurement.appendChild(option);
+});
+selectMeasurement.onchange = onChangeSelectMeasurement;
+selectMeasurementDiv.appendChild(selectMeasurement);
+
+showGeoChart(measurementKeys[0]);
+</script>
+
+<style>
+body {
+  text-align: center;
+  font-family: sans-serif;
+}
+
+textarea {
+  width: 70vw;
+  height: 8em;
+}
+
+#divsels {
+  margin-bottom: .5em;
+}
+
+#prefbox > * {
+  margin: .5em .2em;
+}
+
+#chart-data-count {
+  margin-bottom: 3em;
+}
+
+#charts {
+  width: auto;
+  padding-left: 5em;
+  padding-right: 5em;
+}
+
+#geochart {
+  width: 74%;
+  height: auto;
+  display: inline-block;
+}
+
+#barchart {
+  width: 25%;
+  height: auto;
+  display: inline-block;
+}
+</style>
+
